@@ -20,7 +20,7 @@ export interface Config {
   telegramApiId: number;
   telegramApiHash: string;
   telegramSession: string;
-  sourceChannelId: string;
+  sourceChannelIds: string[];
   processingBotId: string;
   botUsername: string;
   destinationChannelId: string;
@@ -52,6 +52,15 @@ export function loadConfig(): Config {
     throw new Error('TERABOX_DOMAINS must contain at least one domain');
   }
 
+  const rawChannelIds = process.env.SOURCE_CHANNEL_IDS || process.env.SOURCE_CHANNEL_ID;
+  if (!rawChannelIds || rawChannelIds.trim() === '') {
+    throw new Error('Missing required environment variable: SOURCE_CHANNEL_IDS');
+  }
+  const channelIds = rawChannelIds
+    .split(',')
+    .map((id) => id.trim())
+    .filter((id) => id.length > 0);
+
   const maxConcurrent = parseInt(optionalEnv('MAX_CONCURRENT_JOBS', '1'), 10);
   if (maxConcurrent !== 1) {
     console.warn(
@@ -63,7 +72,7 @@ export function loadConfig(): Config {
     telegramApiId: apiId,
     telegramApiHash: requireEnv('TELEGRAM_API_HASH'),
     telegramSession: requireEnv('TELEGRAM_SESSION'),
-    sourceChannelId: requireEnv('SOURCE_CHANNEL_ID'),
+    sourceChannelIds: channelIds,
     processingBotId: requireEnv('PROCESSING_BOT_ID'),
     botUsername: optionalEnv('BOT_USERNAME', 'Terabof5bot').replace(/^@/, ''),
     destinationChannelId: requireEnv('DESTINATION_CHANNEL_ID'),

@@ -22,7 +22,6 @@ import { ResolvedEntities } from './client';
 export async function startSourceMonitor(
   client: TelegramClient,
   entities: ResolvedEntities,
-  sourceChannelId: string,
   teraboxDomains: Set<string>,
   repo: JobsRepository,
   onJobCreated: (jobId: number) => void,
@@ -35,12 +34,14 @@ export async function startSourceMonitor(
   // an extra guard against duplicate processing on reconnects.
   const startupTime = Math.floor(Date.now() / 1000);
 
+  const sourceChannelIds = entities.sourceChannels.map(c => 'id' in c ? c.id.toString() : 'unknown');
+
   monitorLogger.info(
-    { channelId: sourceChannelId, startupTime },
+    { channelIds: sourceChannelIds, startupTime },
     'Source monitor starting — only processing NEW messages'
   );
 
-  const sourceEntity = entities.sourceChannel;
+  const sourceEntities = entities.sourceChannels;
 
   // Register the event handler
   client.addEventHandler(
@@ -82,7 +83,7 @@ export async function startSourceMonitor(
         // Create a job for each unique TeraBox URL
         for (const url of teraboxUrls) {
           const jobData: CreateJobData = {
-            sourceChatId: sourceChannelId,
+            sourceChatId: message.peerId ? message.peerId.toString() : 'unknown',
             sourceMessageId: message.id,
             sourceUrl: url,
             normalizedUrl: url, // Already normalized by urlExtractor
@@ -102,12 +103,12 @@ export async function startSourceMonitor(
         monitorLogger.error({ err }, 'Error processing source message');
       }
     },
-    new NewMessage({ chats: [sourceEntity] })
+    new NewMessage({ chats: sourceEntities })
   );
 
   monitorLogger.info(
-    { channelId: sourceChannelId },
-    'Source channel monitor active — listening for new messages'
+    { channelIds: sourceChannelIds },
+    'Source channels monitor active — listening for new messages'
   );
 }
 
@@ -118,7 +119,6 @@ export async function startSourceMonitor(
 export async function processHistoricalMessages(
   client: TelegramClient,
   entities: ResolvedEntities,
-  sourceChannelId: string,
   teraboxDomains: Set<string>,
   historyLimit: number,
   repo: JobsRepository,
@@ -127,54 +127,70 @@ export async function processHistoricalMessages(
   if (historyLimit <= 0) return;
 
   const historyLogger = logger.child({ module: 'HistoryProcessor' });
+  const sourceChannelIds = entities.sourceChannels.map(c => 'id' in c ? c.id.toString() : 'unknown');
+  
   historyLogger.info(
-    { channelId: sourceChannelId, historyLimit },
-    'Starting historical message sweep'
+    { channelIds: sourceChannelIds, historyLimit },
+    'Starting historical message sweep for all channels'
   );
 
-  let processedCount = 0;
-  let jobCount = 0;
+  let totalProcessedCount = 0;
+  let totalJobCount = 0;
 
-  try {
-    for await (const message of client.iterMessages(entities.sourceChannel, {
-      limit: historyLimit,
-    })) {
-      processedCount++;
+  for (const sourceEntity of entities.sourceChannels) {
+    const sourceChannelId = 'id' in sourceEntity ? sourceEntity.id.toString() : 'unknown';
+    
+    try {
+      let processedCount = 0;
+      let jobCount = 0;
 
-      if (!message || !(message instanceof Api.Message)) continue;
+      for await (const message of client.iterMessages(sourceEntity, {
+        limit: historyLimit,
+      })) {
+        processedCount++;
 
-      const allUrls = extractUrls(message);
-      if (allUrls.length === 0) continue;
+        if (!message || !(message instanceof Api.Message)) continue;
 
-      const teraboxUrls = filterTeraboxUrls(allUrls, teraboxDomains, historyLogger);
-      if (teraboxUrls.length === 0) continue;
+        const allUrls = extractUrls(message);
+        if (allUrls.length === 0) continue;
 
-      for (const url of teraboxUrls) {
-        const jobData: CreateJobData = {
-          sourceChatId: sourceChannelId,
-          sourceMessageId: message.id,
-          sourceUrl: url,
-          normalizedUrl: url,
-        };
+        const teraboxUrls = filterTeraboxUrls(allUrls, teraboxDomains, historyLogger);
+        if (teraboxUrls.length === 0) continue;
 
-        // repo.createJob handles duplicate protection natively
-        const job = repo.createJob(jobData);
-        if (job) {
-          jobCount++;
-          historyLogger.info(
-            { jobId: job.id, url, messageId: message.id },
-            'Job created from historical message'
-          );
+        for (const url of teraboxUrls) {
+          const jobData: CreateJobData = {
+            sourceChatId: sourceChannelId,
+            sourceMessageId: message.id,
+            sourceUrl: url,
+            normalizedUrl: url,
+          };
+
+          // repo.createJob handles duplicate protection natively
+          const job = repo.createJob(jobData);
+          if (job) {
+            jobCount++;
+            historyLogger.info(
+              { jobId: job.id, url, messageId: message.id, sourceChannelId },
+              'Job created from historical message'
+            );
+          }
         }
       }
-    }
 
-    historyLogger.info(
-      { processedMessages: processedCount, newJobsCreated: jobCount },
-      'Historical message sweep complete'
-    );
-  } catch (err) {
-    historyLogger.error({ err }, 'Error during historical message sweep');
+      totalProcessedCount += processedCount;
+      totalJobCount += jobCount;
+      historyLogger.info(
+        { channelId: sourceChannelId, processedMessages: processedCount, newJobsCreated: jobCount },
+        'Historical message sweep complete for channel'
+      );
+    } catch (err) {
+      historyLogger.error({ err, channelId: sourceChannelId }, 'Error during historical message sweep');
+    }
   }
+
+  historyLogger.info(
+    { totalProcessedMessages: totalProcessedCount, totalNewJobsCreated: totalJobCount },
+    'All historical message sweeps complete'
+  );
 }
 

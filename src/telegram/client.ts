@@ -9,7 +9,7 @@ import type { Entity } from 'telegram/define';
 let clientInstance: TelegramClient | null = null;
 
 export interface ResolvedEntities {
-  sourceChannel: Entity;
+  sourceChannels: Entity[];
   processingBot: Entity;
   destinationChannel: Entity;
 }
@@ -46,7 +46,7 @@ export async function connectClient(config: Config, logger: Logger): Promise<Tel
 }
 
 /**
- * Resolves and validates all three Telegram entities (source, bot, destination)
+ * Resolves and validates all Telegram entities (sources, bot, destination)
  * on startup. Ensures the user account can access each one.
  *
  * Uses GramJS's getEntity() which handles various ID formats.
@@ -61,21 +61,24 @@ export async function resolveEntities(
 
   entityLogger.info('Resolving Telegram entities...');
 
-  // Resolve source channel
-  let sourceChannel: Entity;
-  try {
-    sourceChannel = await client.getEntity(bigInt(config.sourceChannelId));
-    const name = 'title' in sourceChannel ? (sourceChannel as Api.Channel).title : 'unknown';
-    entityLogger.info(
-      { id: config.sourceChannelId, name },
-      'Source channel resolved'
-    );
-  } catch (err) {
-    throw new Error(
-      `Cannot resolve source channel ${config.sourceChannelId}. ` +
-      'Ensure the user account is a member of this channel. ' +
-      `Error: ${err instanceof Error ? err.message : err}`
-    );
+  // Resolve source channels
+  const sourceChannels: Entity[] = [];
+  for (const channelId of config.sourceChannelIds) {
+    try {
+      const sourceChannel = await client.getEntity(bigInt(channelId));
+      const name = 'title' in sourceChannel ? (sourceChannel as Api.Channel).title : 'unknown';
+      entityLogger.info(
+        { id: channelId, name },
+        'Source channel resolved'
+      );
+      sourceChannels.push(sourceChannel);
+    } catch (err) {
+      throw new Error(
+        `Cannot resolve source channel ${channelId}. ` +
+        'Ensure the user account is a member of this channel. ' +
+        `Error: ${err instanceof Error ? err.message : err}`
+      );
+    }
   }
 
   // Resolve processing bot

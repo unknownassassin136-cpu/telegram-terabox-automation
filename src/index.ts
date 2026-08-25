@@ -65,7 +65,6 @@ async function main(): Promise<void> {
   await processHistoricalMessages(
     client,
     entities,
-    config.sourceChannelId,
     config.teraboxDomains,
     config.historyLimit,
     repo,
@@ -76,7 +75,6 @@ async function main(): Promise<void> {
   await startSourceMonitor(
     client,
     entities,
-    config.sourceChannelId,
     config.teraboxDomains,
     repo,
     (jobId) => {
@@ -90,7 +88,7 @@ async function main(): Promise<void> {
 
   logger.info('═══════════════════════════════════════════════════════════');
   logger.info('  Telegram TeraBox Automation is RUNNING');
-  logger.info(`  Source channel:      ${config.sourceChannelId}`);
+  logger.info(`  Source channels:     ${config.sourceChannelIds.join(', ')}`);
   logger.info(`  Processing bot:      ${config.processingBotId}`);
   logger.info(`  Destination channel: ${config.destinationChannelId}`);
   logger.info(`  TeraBox domains:     ${[...config.teraboxDomains].join(', ')}`);
