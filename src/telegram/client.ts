@@ -135,7 +135,7 @@ export async function resolveEntities(
   }
 
   entityLogger.info('All Telegram entities resolved successfully');
-  return { sourceChannel, processingBot, destinationChannel };
+  return { sourceChannels, processingBot, destinationChannel };
 }
 
 /**
