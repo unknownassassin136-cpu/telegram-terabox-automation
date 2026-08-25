@@ -42,7 +42,7 @@ export function loadConfig(): Config {
 
   const domains = optionalEnv(
     'TERABOX_DOMAINS',
-    'terabox.com,www.terabox.com,teraboxapp.com,www.teraboxapp.com'
+    'terabox.com,www.terabox.com,teraboxapp.com,www.teraboxapp.com,1024terabox.com,www.1024terabox.com,teraboxlink.com,nephobox.com,freeterabox.com,4funbox.com,mirrobox.com,momerybox.com,terabox.app,terabox.fun'
   )
     .split(',')
     .map((d) => d.trim().toLowerCase())
