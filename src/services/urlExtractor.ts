@@ -65,6 +65,24 @@ export function extractUrls(message: Api.Message): string[] {
     }
   }
 
+  // 3. Extract from Inline Keyboard Buttons (replyMarkup)
+  if (message.replyMarkup && message.replyMarkup.className === 'ReplyInlineMarkup') {
+    for (const row of message.replyMarkup.rows) {
+      for (const button of row.buttons) {
+        if (button.className === 'KeyboardButtonUrl') {
+          const rawUrl = button.url;
+          if (rawUrl) {
+            const normalized = normalizeUrl(rawUrl);
+            if (normalized && !seen.has(normalized)) {
+              seen.add(normalized);
+              results.push(normalized);
+            }
+          }
+        }
+      }
+    }
+  }
+
   return results;
 }
 
