@@ -6,6 +6,7 @@ import { filterTeraboxUrls } from '../services/teraboxFilter';
 import { JobsRepository, CreateJobData } from '../database/jobsRepository';
 import { Logger } from '../utils/logger';
 import { ResolvedEntities } from './client';
+import { StateManager } from '../services/stateManager';
 
 /**
  * Starts monitoring the source channel for new messages containing TeraBox URLs.
@@ -24,21 +25,17 @@ export async function startSourceMonitor(
   entities: ResolvedEntities,
   teraboxDomains: Set<string>,
   repo: JobsRepository,
+  stateManager: StateManager,
   onJobCreated: (jobId: number) => void,
   logger: Logger
 ): Promise<void> {
   const monitorLogger = logger.child({ module: 'SourceMonitor' });
 
-  // Record the time of startup — we'll only process messages after this point.
-  // GramJS NewMessage events are inherently "new" (real-time), but this provides
-  // an extra guard against duplicate processing on reconnects.
-  const startupTime = Math.floor(Date.now() / 1000);
-
   const sourceChannelIds = entities.sourceChannels.map(c => 'id' in c ? c.id.toString() : 'unknown');
 
   monitorLogger.info(
-    { channelIds: sourceChannelIds, startupTime },
-    'Source monitor starting — only processing NEW messages'
+    { channelIds: sourceChannelIds },
+    'Source monitor starting — utilizing State Manager for persistence'
   );
 
   const sourceEntities = entities.sourceChannels;
@@ -50,16 +47,21 @@ export async function startSourceMonitor(
         const message = event.message as Api.Message;
         if (!message) return;
 
-        // Guard: skip messages from before startup (can happen on reconnect)
-        if (message.date && message.date < startupTime) {
+        const channelId = message.peerId ? message.peerId.toString() : 'unknown';
+
+        // Guard: skip messages already processed or from before the bot knew about this channel's state
+        if (!stateManager.shouldProcessMessage(channelId, message.id)) {
           monitorLogger.debug(
-            { messageId: message.id, messageDate: message.date },
-            'Skipping pre-startup message'
+            { messageId: message.id, channelId },
+            'Skipping already processed message'
           );
           return;
         }
 
-        monitorLogger.info({ messageId: message.id }, 'New source message');
+        // Update the state manager with this new message ID
+        stateManager.updateLastProcessedId(channelId, message.id);
+
+        monitorLogger.info({ messageId: message.id, channelId }, 'New source message');
 
         // Extract all URLs from the message
         const allUrls = extractUrls(message);
@@ -83,7 +85,7 @@ export async function startSourceMonitor(
         // Create a job for each unique TeraBox URL
         for (const url of teraboxUrls) {
           const jobData: CreateJobData = {
-            sourceChatId: message.peerId ? message.peerId.toString() : 'unknown',
+            sourceChatId: channelId,
             sourceMessageId: message.id,
             sourceUrl: url,
             normalizedUrl: url, // Already normalized by urlExtractor
@@ -122,6 +124,7 @@ export async function processHistoricalMessages(
   teraboxDomains: Set<string>,
   historyLimit: number,
   repo: JobsRepository,
+  stateManager: StateManager,
   logger: Logger
 ): Promise<void> {
   if (historyLimit <= 0) return;
@@ -150,6 +153,13 @@ export async function processHistoricalMessages(
         processedCount++;
 
         if (!message || !(message instanceof Api.Message)) continue;
+
+        if (!stateManager.shouldProcessMessage(sourceChannelId, message.id)) {
+          continue; // Skip messages we've already processed across restarts
+        }
+
+        // Update the highest seen ID so we don't process it again
+        stateManager.updateLastProcessedId(sourceChannelId, message.id);
 
         const allUrls = extractUrls(message);
         if (allUrls.length === 0) continue;
@@ -192,5 +202,8 @@ export async function processHistoricalMessages(
     { totalProcessedMessages: totalProcessedCount, totalNewJobsCreated: totalJobCount },
     'All historical message sweeps complete'
   );
+
+  // Force save the state after the sweep is complete
+  await stateManager.forceSave();
 }
 

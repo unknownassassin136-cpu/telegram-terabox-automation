@@ -77,7 +77,7 @@ export function loadConfig(): Config {
     botUsername: optionalEnv('BOT_USERNAME', 'Terabof5bot').replace(/^@/, ''),
     destinationChannelId: requireEnv('DESTINATION_CHANNEL_ID'),
     teraboxDomains: new Set(domains),
-    historyLimit: parseInt(optionalEnv('HISTORY_LIMIT', '0'), 10),
+    historyLimit: parseInt(optionalEnv('HISTORY_LIMIT', '200'), 10),
     maxConcurrentJobs: 1, // Forced to 1 — serial processing only
     videoTimeoutMinutes: parseInt(optionalEnv('VIDEO_TIMEOUT_MINUTES', '15'), 10),
     maxRetries: parseInt(optionalEnv('MAX_RETRIES', '2'), 10),

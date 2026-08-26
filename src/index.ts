@@ -7,6 +7,7 @@ import { connectClient, resolveEntities, disconnectClient } from './telegram/cli
 import { startSourceMonitor, processHistoricalMessages } from './telegram/sourceMonitor';
 import { startBotResponseListener } from './telegram/processingBot';
 import { JobQueue } from './services/jobQueue';
+import { StateManager } from './services/stateManager';
 import path from 'path';
 import http from 'http';
 
@@ -40,6 +41,11 @@ async function main(): Promise<void> {
   // ── 5. Resolve entities ─────────────────────────────────────────────
   const entities = await resolveEntities(client, config, logger);
 
+  // ── 5.5 Initialize State Manager ──────────────────────────────────────
+  const stateManager = new StateManager(client, logger);
+  await stateManager.loadState();
+  stateManager.startAutoSave(60000);
+
   // ── 6. Initialize job queue ─────────────────────────────────────────
   const queue = new JobQueue(client, entities, repo, config, logger);
 
@@ -68,6 +74,7 @@ async function main(): Promise<void> {
     config.teraboxDomains,
     config.historyLimit,
     repo,
+    stateManager,
     logger
   );
 
@@ -77,6 +84,7 @@ async function main(): Promise<void> {
     entities,
     config.teraboxDomains,
     repo,
+    stateManager,
     (jobId) => {
       queue.enqueue(jobId);
     },
@@ -100,6 +108,8 @@ async function main(): Promise<void> {
   const shutdown = async (signal: string) => {
     logger.info({ signal }, 'Shutting down...');
     queue.stop();
+    stateManager.stopAutoSave();
+    await stateManager.forceSave();
     await disconnectClient(logger);
     closeDatabase(logger);
     logger.info('Shutdown complete');
