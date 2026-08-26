@@ -35,7 +35,13 @@ async function main(): Promise<void> {
   const db = await initDatabase(config.databasePath, logger);
   const repo = new JobsRepository(db, logger);
 
-  // ── 4. Connect Telegram ─────────────────────────────────────────────
+  // ── 4. Connect Telegram (with delay for Render) ─────────────────────
+  // Render uses Zero-Downtime deploys. The new instance starts while the old one
+  // is still running. If both connect to Telegram simultaneously, Telegram revokes
+  // the session (AUTH_KEY_DUPLICATED). We delay the connection by 15 seconds to
+  // give Render time to kill the old instance.
+  logger.info('Waiting 15 seconds for old instances to shut down...');
+  await new Promise(resolve => setTimeout(resolve, 15000));
   const client = await connectClient(config, logger);
 
   // ── 5. Resolve entities ─────────────────────────────────────────────
