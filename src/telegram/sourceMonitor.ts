@@ -40,6 +40,14 @@ export async function startSourceMonitor(
 
   const sourceEntities = entities.sourceChannels;
 
+  function getPeerIdString(peerId: any): string {
+    if (!peerId) return 'unknown';
+    if (peerId.channelId) return peerId.channelId.toString();
+    if (peerId.chatId) return peerId.chatId.toString();
+    if (peerId.userId) return peerId.userId.toString();
+    return 'unknown';
+  }
+
   // Register the event handler
   client.addEventHandler(
     async (event) => {
@@ -47,7 +55,7 @@ export async function startSourceMonitor(
         const message = event.message as Api.Message;
         if (!message) return;
 
-        const channelId = message.peerId ? message.peerId.toString() : 'unknown';
+        const channelId = getPeerIdString(message.peerId);
 
         // Guard: skip messages already processed or from before the bot knew about this channel's state
         if (!stateManager.shouldProcessMessage(channelId, message.id)) {
